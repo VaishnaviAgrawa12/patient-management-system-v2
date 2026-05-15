@@ -1,0 +1,145 @@
+version: '3.8'
+
+services:
+
+  # ─── DATABASES ───────────────────────────────────────────
+
+  patient-service-db:
+    image: postgres:latest
+    container_name: patient-service-db
+    environment:
+      POSTGRES_DB: db
+      POSTGRES_USER: admin_user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5000:5432"
+    volumes:
+      - patient-service-db-data:/var/lib/postgresql/data
+    networks:
+      - internal
+
+  auth-service-db:
+    image: postgres:latest
+    container_name: auth-service-db
+    environment:
+      POSTGRES_DB: db
+      POSTGRES_USER: admin_user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5001:5432"
+    volumes:
+      - auth-service-db-data:/var/lib/postgresql/data
+    networks:
+      - internal
+
+  # ─── KAFKA ───────────────────────────────────────────────
+
+  kafka:
+    image: apache/kafka:3.9.0
+    container_name: kafka
+    environment:
+      KAFKA_NODE_ID: 0
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 0@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    ports:
+      - "9092:9092"
+      - "9094:9094"
+    networks:
+      - internal
+
+  # ─── SERVICES ────────────────────────────────────────────
+
+  billing-service:
+    build:
+      context: ./billing-service
+      dockerfile: Dockerfile
+    container_name: billing-service
+    ports:
+      - "4001:4001"
+      - "9001:9001"
+    networks:
+      - internal
+
+  patient-service:
+    build:
+      context: ./patient-service
+      dockerfile: Dockerfile
+    container_name: patient-service
+    ports:
+      - "4000:4000"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://patient-service-db:5432/db
+      SPRING_DATASOURCE_USERNAME: admin_user
+      SPRING_DATASOURCE_PASSWORD: password
+      BILLING_SERVICE_ADDRESS: billing-service
+      BILLING_SERVICE_GRPC_PORT: 9001
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    depends_on:
+      - patient-service-db
+      - billing-service
+      - kafka
+    networks:
+      - internal
+
+  auth-service:
+    build:
+      context: ./auth-service
+      dockerfile: Dockerfile
+    container_name: auth-service
+    ports:
+      - "4005:4005"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://auth-service-db:5432/db
+      SPRING_DATASOURCE_USERNAME: admin_user
+      SPRING_DATASOURCE_PASSWORD: password
+    depends_on:
+      - auth-service-db
+    networks:
+      - internal
+
+  analytics-service:
+    build:
+      context: ./analytics-service
+      dockerfile: Dockerfile
+    container_name: analytics-service
+    ports:
+      - "4002:4002"
+    environment:
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    depends_on:
+      - kafka
+    networks:
+      - internal
+
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: api-gateway
+    ports:
+      - "4004:4004"
+    environment:
+      AUTH_SERVICE_URL: http://auth-service:4005
+    depends_on:
+      - patient-service
+      - auth-service
+      - analytics-service
+    networks:
+      - internal
+
+# ─── VOLUMES ───────────────────────────────────────────────
+
+volumes:
+  patient-service-db-data:
+  auth-service-db-data:
+
+# ─── NETWORKS ──────────────────────────────────────────────
+
+networks:
+  internal:
+    driver: bridge
