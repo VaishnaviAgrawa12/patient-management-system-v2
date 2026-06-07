@@ -5,7 +5,7 @@ services:
   # ─── DATABASES ───────────────────────────────────────────
 
   patient-service-db:
-    image: postgres:latest
+    image: postgres:16
     container_name: patient-service-db
     environment:
       POSTGRES_DB: db
@@ -17,9 +17,14 @@ services:
       - patient-service-db-data:/var/lib/postgresql/data
     networks:
       - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin_user -d db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   auth-service-db:
-    image: postgres:latest
+    image: postgres:16
     container_name: auth-service-db
     environment:
       POSTGRES_DB: db
@@ -31,6 +36,11 @@ services:
       - auth-service-db-data:/var/lib/postgresql/data
     networks:
       - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin_user -d db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # ─── KAFKA ───────────────────────────────────────────────
 
@@ -51,6 +61,12 @@ services:
       - "9094:9094"
     networks:
       - internal
+    healthcheck:
+      test: [ "CMD-SHELL", "nc -z localhost 9092 || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
   # ─── SERVICES ────────────────────────────────────────────
 
@@ -64,6 +80,7 @@ services:
       - "9001:9001"
     networks:
       - internal
+    restart: on-failure
 
   patient-service:
     build:
@@ -80,11 +97,15 @@ services:
       BILLING_SERVICE_GRPC_PORT: 9001
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     depends_on:
-      - patient-service-db
-      - billing-service
-      - kafka
+      patient-service-db:
+        condition: service_healthy
+      billing-service:
+        condition: service_started
+      kafka:
+        condition: service_healthy
     networks:
       - internal
+    restart: on-failure
 
   auth-service:
     build:
@@ -97,10 +118,15 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://auth-service-db:5432/db
       SPRING_DATASOURCE_USERNAME: admin_user
       SPRING_DATASOURCE_PASSWORD: password
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_SQL_INIT_MODE: always
+      JWT_SECRET: bXlTZWNyZXRLZXkxMjM0NTY3ODkwMTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkw
     depends_on:
-      - auth-service-db
+      auth-service-db:
+        condition: service_healthy
     networks:
       - internal
+    restart: on-failure
 
   analytics-service:
     build:
@@ -112,9 +138,11 @@ services:
     environment:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     depends_on:
-      - kafka
+      kafka:
+        condition: service_healthy
     networks:
       - internal
+    restart: on-failure
 
   api-gateway:
     build:
@@ -126,11 +154,15 @@ services:
     environment:
       AUTH_SERVICE_URL: http://auth-service:4005
     depends_on:
-      - patient-service
-      - auth-service
-      - analytics-service
+      patient-service:
+        condition: service_started
+      auth-service:
+        condition: service_started
+      analytics-service:
+        condition: service_started
     networks:
       - internal
+    restart: on-failure
 
 # ─── VOLUMES ───────────────────────────────────────────────
 
