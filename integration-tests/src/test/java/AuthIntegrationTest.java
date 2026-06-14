@@ -63,8 +63,7 @@ public class AuthIntegrationTest {
                 .post("/auth/login")
                 .then()
                 .statusCode(401);
-
-
-
     }
+
+
 }
