@@ -15,6 +15,8 @@ public class LocalStack extends Stack {
     public LocalStack(final App scope, final String id, final StackProps props){
         super(scope, id, props);
         this.vpc = createVpc();
+
+        DatabaseInstance authServiceDb = createDatabase("AuthServiceDB", "auth-service-db");
     }
 
     private Vpc createVpc() {
@@ -24,6 +26,8 @@ public class LocalStack extends Stack {
                 .maxAzs(2)
                 .build();
     }
+
+
 
     private DatabaseInstance createDatabase(String id, String dbName){
         return DatabaseInstance.Builder
@@ -37,6 +41,7 @@ public class LocalStack extends Stack {
                 .allocatedStorage(28)
                 .credentials(Credentials.fromGeneratedSecret("admin_user"))
                 .databaseName(dbName)
+                .removalPolicy(RemovalPolicy.DESTROY)
                 .build();
     }
 
